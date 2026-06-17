@@ -2509,7 +2509,10 @@ function buildPoolList(){
     let badgeClass=isCrypto?'crypto':'';
     if(mine)badgeClass='mine';else if(taken)badgeClass='taken';
     return `<div class="pool-row ${taken?'drafted-away':''} ${mine?'my-drafted':''}">
-      <div class="pool-ticker-badge ${badgeClass}">${s.ticker}</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
+        <div class="pool-ticker-badge ${badgeClass}">${s.ticker}</div>
+        <button onclick="event.stopPropagation();openLiveData('${s.ticker}',${isCrypto})" title="Finviz live data" style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--accent);font-weight:700;padding:0;white-space:nowrap">📊 Live</button>
+      </div>
       <div class="pool-info">
         <div class="pool-name">${s.name}</div>
         <div class="pool-meta"><span class="tier-badge ${tierClass(s.tier)}">${tierLabel(s.tier)}</span> &nbsp;${isCrypto?'🪙 Crypto Flex eligible':s.sector}${mine?' · <strong style="color:var(--green)">✓ Yours</strong>':''}${reason?` · <span style="color:var(--orange)">${reason}</span>`:''}</div>
@@ -2519,7 +2522,6 @@ function buildPoolList(){
         <div class="pool-shares">${isCrypto?'flexible $':fmtShares(sharesFor(s.price,STOCK_BUDGET))+' sh @ $80K'}</div>
       </div>
       <div class="pool-chg" style="color:${colorFor(s.change)}">${fmt(s.change)}</div>
-      <button onclick="event.stopPropagation();openLiveData('${s.ticker}',${isCrypto})" title="Live data" style="color:var(--accent);font-size:18px;background:none;border:none;cursor:pointer;flex-shrink:0;padding:0 2px">📊</button>
       <button class="draft-pick-btn ${isCrypto?'crypto-btn':''}" ${!eligible?'disabled':''} onclick="${eligible?`openConfirm('${s.ticker}')`:''}">${btnLabel}</button>
     </div>`;}).join('');
 }
