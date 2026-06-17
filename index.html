@@ -1824,10 +1824,93 @@ function currentStockRound(){const i=stockPicks.findIndex(p=>p===null);return i=
 function stockPhaseDone(){return currentStockRound()>STOCK_ROUNDS}
 
 // ===== TICKER =====
+// ===== FINNHUB REAL-TIME PRICES =====
+const FINNHUB_KEY='d8pca5pr01qgoi5i0fbgd8pca5pr01qgoi5i0fc0';
+const cryptoSymbols={BTC:'BINANCE:BTCUSDT',ETH:'BINANCE:ETHUSDT',SOL:'BINANCE:SOLUSDT',DOGE:'BINANCE:DOGEUSDT'};
+let finnhubSocket=null;
+let liveprices={};
+
+function initFinnhub(){
+  try{
+    finnhubSocket=new WebSocket('wss://ws.finnhub.io?token='+FINNHUB_KEY);
+    finnhubSocket.onopen=function(){
+      // Subscribe to all stocks
+      allStocks.forEach(s=>{
+        const sym=s.crypto?(cryptoSymbols[s.ticker]||null):s.ticker;
+        if(sym) finnhubSocket.send(JSON.stringify({type:'subscribe',symbol:sym}));
+      });
+      // Subscribe to SPY and QQQ for ticker
+      ['SPY','QQQ'].forEach(sym=>finnhubSocket.send(JSON.stringify({type:'subscribe',symbol:sym})));
+    };
+    finnhubSocket.onmessage=function(event){
+      const data=JSON.parse(event.data);
+      if(data.type==='trade'&&data.data){
+        data.data.forEach(trade=>{
+          const sym=trade.s;
+          const price=trade.p;
+          // Match back to our ticker
+          allStocks.forEach(s=>{
+            const mapped=s.crypto?(cryptoSymbols[s.ticker]||null):s.ticker;
+            if(mapped===sym){
+              const oldPrice=s.price;
+              s.price=price;
+              // Update change % from old price if we have it
+              if(oldPrice&&oldPrice!==price){
+                s.change=parseFloat(((price-oldPrice)/oldPrice*100).toFixed(2));
+              }
+              liveprices[s.ticker]=price;
+            }
+          });
+          // Handle SPY/QQQ
+          if(sym==='SPY'||sym==='QQQ') liveprices[sym]=price;
+        });
+        // Refresh ticker every trade
+        buildTicker();
+      }
+    };
+    finnhubSocket.onerror=function(){
+      console.log('Finnhub WS error — using static prices');
+    };
+    finnhubSocket.onclose=function(){
+      // Reconnect after 5 seconds
+      setTimeout(initFinnhub, 5000);
+    };
+  }catch(e){
+    console.log('Finnhub unavailable — using static prices');
+  }
+}
+
+// Also fetch snapshot prices via REST for immediate load
+function fetchSnapshotPrices(){
+  const stocks=allStocks.filter(s=>!s.crypto).map(s=>s.ticker);
+  // Fetch a few key stocks immediately
+  ['NVDA','AAPL','MSFT','TSLA','SPCX','FAC','BTC'].forEach(ticker=>{
+    const s=allStocks.find(x=>x.ticker===ticker);
+    if(!s)return;
+    const sym=s.crypto?(cryptoSymbols[ticker]||null):ticker;
+    if(!sym)return;
+    fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`)
+      .then(r=>r.json())
+      .then(data=>{
+        if(data&&data.c&&data.c>0){
+          const prev=data.pc||s.price;
+          s.price=data.c;
+          s.change=parseFloat(((data.c-prev)/prev*100).toFixed(2));
+          liveprices[ticker]=data.c;
+          buildTicker();
+        }
+      }).catch(()=>{});
+  });
+}
+
 function buildTicker(){
-  const items=[...allStocks.map(s=>({sym:s.ticker,chg:s.change})),{sym:'SPY',chg:0.6},{sym:'QQQ',chg:1.1}];
+  const items=[...allStocks.map(s=>({sym:s.ticker,chg:s.change,live:!!liveprices[s.ticker]})),{sym:'SPY',chg:0.6,live:!!liveprices['SPY']},{sym:'QQQ',chg:1.1,live:!!liveprices['QQQ']}];
   const doubled=[...items,...items];
-  document.getElementById('ticker').innerHTML=doubled.map(s=>`<span class="ticker-item"><span class="ticker-sym">${s.sym}</span><span style="color:${s.chg>=0?'#69f0ae':'#ff5252'};font-weight:700;font-size:12px">${fmt(s.chg)}</span></span>`).join('');
+  const hasLive=Object.keys(liveprices).length>0;
+  document.getElementById('ticker').innerHTML=
+    (hasLive?'<span class="ticker-item"><span style="color:#69f0ae;font-size:10px;font-weight:700;letter-spacing:1px">● LIVE</span></span>':
+    '<span class="ticker-item"><span style="color:rgba(255,255,255,0.4);font-size:10px;font-weight:700;letter-spacing:1px">● STATIC</span></span>')+
+    doubled.map(s=>`<span class="ticker-item"><span class="ticker-sym">${s.sym}</span><span style="color:${s.chg>=0?'#69f0ae':'#ff5252'};font-weight:700;font-size:12px">${fmt(s.chg)}</span></span>`).join('');
 }
 
 // ===== SIDEBAR & STANDINGS =====
@@ -2490,6 +2573,9 @@ function buildEmptyStandings(){
 }
 
 buildTicker();buildSidebarStandings();buildAllMatchups();buildFullStandings();buildLineup();
+// Start live price feed immediately
+initFinnhub();
+fetchSnapshotPrices();
 
 </script>
 </body>
